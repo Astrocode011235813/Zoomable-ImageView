@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="ZIVImageView">
+        <attr name="animationDurationDoubleTap" format="integer"/>
+        <attr name="animationDurationOverZoom" format="integer"/>
+        <attr name="maxZoom" format="float"/>
+        <attr name="minZoom" format="float"/>
+        <attr name="minOverZoom" format="float"/>
+        <attr name="maxOverZoom" format="float"/>
+        <attr name="overScrollDistance" format="dimension"/>
+    </declare-styleable>
+</resources>
