@@ -11,9 +11,9 @@ import android.support.annotation.Nullable;
 import android.support.v4.view.NestedScrollingChild;
 import android.support.v4.view.NestedScrollingChildHelper;
 import android.support.v4.view.ScaleGestureDetectorCompat;
+import android.support.v4.view.ScrollingView;
 import android.support.v4.view.ViewCompat;
 import android.support.v7.widget.AppCompatImageView;
-import android.support.v4.view.ScrollingView;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.view.MotionEvent;
@@ -61,16 +61,16 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
 
     private final int[] mScrollConsumed = new int[2];
     private final int[] mScrollOffset = new int[2];
-    private int mNestedXOffset,mNestedYOffset;
+    private int mNestedXOffset, mNestedYOffset;
 
     private int mOverScrollDistance;
 
     private int mCurrentXOverScroll, mCurrentYOverScroll;
-    private int mLastX,mLastY;
+    private int mLastX, mLastY;
 
     private int mMainPointerId;
     private VelocityTracker mVelocityTracker;
-    private int mMinimumVelocity,mMaximumVelocity;
+    private int mMinimumVelocity, mMaximumVelocity;
 
     private int mDoubleTapDistance, mDoubleTapTimeout;
     private long mLastDownTime;
@@ -83,7 +83,7 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
     private float mMinZoom, mMaxZoom;
     private float mMinOverZoom, mMaxOverZoom;
 
-    public enum State {DISABLE, NORMAL, PINCH_SCALE,SMOOTH_SCALE, FLING, SCROLL}
+    public enum State {DISABLE, NORMAL, PINCH_SCALE, SMOOTH_SCALE, FLING, SCROLL}
 
     private State mCurrentState = State.DISABLE;
 
@@ -115,7 +115,10 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
 
         TypedArray array = context.obtainStyledAttributes(attrs, R.styleable.ZIVImageView, defStyleAttr, 0);
 
-        setOverScrollDistance(array.getDimensionPixelSize(R.styleable.ZIVImageView_overScrollDistance, DEFAULT_OVER_SCROLL_DISTANCE));
+        DisplayMetrics dm = getContext().getResources().getDisplayMetrics();
+        final int overScrollDistance = Math.round(DEFAULT_OVER_SCROLL_DISTANCE * dm.density);
+
+        setOverScrollDistance(array.getDimensionPixelSize(R.styleable.ZIVImageView_overScrollDistance, overScrollDistance));
 
         setDoubleTapAnimationDuration(array.getInt(R.styleable.ZIVImageView_animationDurationDoubleTap, DEFAULT_DOUBLE_TAP_SCALE_ANIMATION_DURATION));
 
@@ -255,7 +258,7 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
         boolean ret = super.onTouchEvent(event);
 
         if (mCurrentState != State.DISABLE && isEnabled()) {
-            int pointerIndex,action = event.getActionMasked();
+            int pointerIndex, action = event.getActionMasked();
 
             MotionEvent copyEvent = MotionEvent.obtain(event);
 
@@ -263,12 +266,12 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
                 if (mCurrentState == State.SCROLL) {
                     mCurrentState = State.NORMAL;
                 }
-            }else if(action == MotionEvent.ACTION_DOWN){
+            } else if (action == MotionEvent.ACTION_DOWN) {
                 mNestedXOffset = 0;
                 mNestedYOffset = 0;
             }
 
-            copyEvent.offsetLocation(mNestedXOffset,mNestedYOffset);
+            copyEvent.offsetLocation(mNestedXOffset, mNestedYOffset);
 
             if (event.getPointerCount() > 1) {
                 ret = mScaleGestureDetector.onTouchEvent(event) || ret;
@@ -277,7 +280,7 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_POINTER_UP:
                     pointerIndex = event.getActionIndex();
-                    if(event.getPointerId(pointerIndex) == mMainPointerId){
+                    if (event.getPointerId(pointerIndex) == mMainPointerId) {
                         int newPointerIndex = pointerIndex == 0 ? 1 : 0;
 
                         mLastX = Math.round(event.getX(newPointerIndex));
@@ -289,24 +292,39 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
                     break;
                 case MotionEvent.ACTION_CANCEL:
                 case MotionEvent.ACTION_UP:
-
                     if (mCurrentState == State.SCROLL) {
-                        mVelocityTracker.computeCurrentVelocity(1000,mMaximumVelocity);
+
+                        int currX = getScrollX();
+                        int currY = getScrollY();
+
+                        mVelocityTracker.computeCurrentVelocity(1000, mMaximumVelocity);
 
                         int velocityX = Math.round(mVelocityTracker.getXVelocity(mMainPointerId));
                         int velocityY = Math.round(mVelocityTracker.getYVelocity(mMainPointerId));
 
-                        if(Math.abs(velocityX) >= mMinimumVelocity || Math.abs(velocityY) >= mMinimumVelocity){
-                            boolean canFling = (mCurrentState == State.SCROLL || mCurrentState == State.NORMAL) && (mCurrentXOverScroll != 0 || mCurrentYOverScroll != 0);
+                        if (Math.abs(velocityX) >= mMinimumVelocity || Math.abs(velocityY) >= mMinimumVelocity) {
+                            int maxX = Math.round(mCurrentDrawableRect.right) - getWidth();
+                            int maxY = Math.round(mCurrentDrawableRect.bottom) - getHeight();
 
-                            if(!dispatchNestedPreFling(-velocityX,-velocityY)) {
-                                dispatchNestedFling(-velocityX, -velocityY, canFling);
-                                if (canFling) {
-                                    int maxX = Math.round(mCurrentDrawableRect.right) - getWidth();
-                                    int maxY = Math.round(mCurrentDrawableRect.bottom) - getHeight();
+                            int minX = Math.round(mCurrentDrawableRect.left);
+                            int minY = Math.round(mCurrentDrawableRect.top);
 
-                                    int minX = Math.round(mCurrentDrawableRect.left);
-                                    int minY = Math.round(mCurrentDrawableRect.top);
+                            boolean isXFling = mCurrentDrawableRect.width() > getWidth();
+                            boolean isYFling = mCurrentDrawableRect.height() > getHeight();
+
+                            boolean isFlingOrSpringBack;
+
+                            if (!isXFling && !isYFling) {
+                                isFlingOrSpringBack = false;
+                            } else {
+                                isFlingOrSpringBack =
+                                        (!isXFling || (currX > minX && currX < maxX)) &&
+                                                (!isYFling || (currY > minY && currY < maxY));
+                            }
+
+                            if (isFlingOrSpringBack) {
+                                if (!dispatchNestedPreFling(-velocityX, -velocityY)) {
+                                    dispatchNestedFling(-velocityX, -velocityY, true);
 
                                     int axis;
 
@@ -318,19 +336,25 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
                                         axis = ATIFling.X_AND_Y;
                                     }
 
-                                    mFlingTask.start(ATIFling.MODE_FLING, axis, getScrollX(), getScrollY(), -Math.round(velocityX), -Math.round(velocityY), minX, minY, maxX, maxY);
+                                    mFlingTask.start(ATIFling.MODE_FLING, axis, currX, currY,
+                                            -Math.round(velocityX), -Math.round(velocityY), minX, minY, maxX, maxY);
 
                                     ret |= true;
+
+                                }
+                            } else {
+                                if (!springBackIfOverScroll()) {
+                                    mCurrentState = State.NORMAL;
                                 }
                             }
-                        }else{
+                        } else {
                             if (!springBackIfOverScroll()) {
                                 mCurrentState = State.NORMAL;
                             }
                         }
                     }
 
-                    if(mVelocityTracker != null) {
+                    if (mVelocityTracker != null) {
                         mVelocityTracker.recycle();
                         mVelocityTracker = null;
                     }
@@ -341,7 +365,7 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
                     float currX = event.getX();
                     float currY = event.getY();
 
-                    if(mCurrentDrawableRect.contains(currX,currY)) {
+                    if (mCurrentDrawableRect.contains(currX, currY)) {
 
                         if (mVelocityTracker == null) {
                             mVelocityTracker = VelocityTracker.obtain();
@@ -355,7 +379,7 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
                         if (isDoubleTap(event.getEventTime(), currX, currY)) {
                             if (mCurrentState == State.NORMAL) {
                                 float targetScale = 1F, currentScale = getCurrentZoom();
-                                float x = currX,y = currY;
+                                float x = currX, y = currY;
 
                                 boolean correctTranslate = false;
 
@@ -383,7 +407,8 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
                                     }
                                 }
 
-                                mSmoothScaleTask.start(targetScale, x, y, mDoubleTapAnimationDuration, 0, 0,correctTranslate);
+                                mSmoothScaleTask.start(targetScale, x, y, mDoubleTapAnimationDuration,
+                                        0, 0, correctTranslate);
 
                                 ret |= true;
                             }
@@ -403,15 +428,15 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
                         }
 
                         startNestedScroll(ViewCompat.SCROLL_AXIS_HORIZONTAL | ViewCompat.SCROLL_AXIS_VERTICAL);
-                    }else {
-                        if(mCurrentState == State.NORMAL){
+                    } else {
+                        if (mCurrentState == State.NORMAL) {
                             mMainPointerId = -1;
                             ret |= true;
                         }
                     }
                     break;
                 case MotionEvent.ACTION_MOVE:
-                    if(mMainPointerId != -1) {
+                    if (mMainPointerId != -1) {
                         pointerIndex = event.findPointerIndex(mMainPointerId);
                         if (event.getPointerCount() == 1) {
 
@@ -422,13 +447,14 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
                                 dx -= mScrollConsumed[0];
                                 dy -= mScrollConsumed[1];
 
-                                copyEvent.offsetLocation(mScrollOffset[0],mScrollOffset[1]);
+                                copyEvent.offsetLocation(mScrollOffset[0], mScrollOffset[1]);
 
                                 mNestedXOffset += mScrollOffset[0];
                                 mNestedYOffset += mScrollOffset[1];
                             }
 
-                            if ((dx != 0 || dy != 0) && (mCurrentState == State.NORMAL || mCurrentState == State.SCROLL)) {
+                            if ((dx != 0 || dy != 0) &&
+                                    (mCurrentState == State.NORMAL || mCurrentState == State.SCROLL)) {
 
                                 mCurrentState = State.SCROLL;
 
@@ -437,9 +463,9 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
 
                                 if (mCurrentDrawableRect.width() > getWidth()) {
                                     if (dx < 0) {
-                                        mCurrentXOverScroll = DEFAULT_OVER_SCROLL_DISTANCE;
+                                        mCurrentXOverScroll = mOverScrollDistance;
                                     } else {
-                                        mCurrentXOverScroll = -DEFAULT_OVER_SCROLL_DISTANCE;
+                                        mCurrentXOverScroll = -mOverScrollDistance;
                                     }
 
                                 } else {
@@ -448,31 +474,33 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
 
                                 if (mCurrentDrawableRect.height() > getHeight()) {
                                     if (dy < 0) {
-                                        mCurrentYOverScroll = DEFAULT_OVER_SCROLL_DISTANCE;
+                                        mCurrentYOverScroll = mOverScrollDistance;
                                     } else {
-                                        mCurrentYOverScroll = -DEFAULT_OVER_SCROLL_DISTANCE;
+                                        mCurrentYOverScroll = -mOverScrollDistance;
                                     }
                                 } else {
                                     mCurrentYOverScroll = 0;
                                 }
 
-                                int consumedDx = getCurrentPossibleScroll(dx, computeHorizontalScrollOffset(), computeHorizontalScrollRange(), computeHorizontalScrollExtent());
-                                int consumedDy = getCurrentPossibleScroll(dy, computeVerticalScrollOffset(), computeVerticalScrollRange(), computeVerticalScrollExtent());
+                                int consumedDx = getCurrentPossibleScroll(dx, computeHorizontalScrollOffset(),
+                                        computeHorizontalScrollRange(), computeHorizontalScrollExtent());
+                                int consumedDy = getCurrentPossibleScroll(dy, computeVerticalScrollOffset(),
+                                        computeVerticalScrollRange(), computeVerticalScrollExtent());
 
                                 final int oldX = getScrollX();
                                 final int oldY = getScrollY();
 
                                 scrollBy(consumedDx, consumedDy);
 
-                                if(mEventListener != null){
-                                    mEventListener.onScroll(oldX,oldY,getScrollX(),getScrollY());
+                                if (mEventListener != null) {
+                                    mEventListener.onScroll(oldX, oldY, getScrollX(), getScrollY());
                                 }
 
                                 if (dispatchNestedScroll(consumedDx, consumedDy, dx - consumedDx, dy - consumedDy, mScrollOffset)) {
                                     mLastX -= mScrollOffset[0];
                                     mLastY -= mScrollOffset[1];
 
-                                    copyEvent.offsetLocation(mScrollOffset[0],mScrollOffset[1]);
+                                    copyEvent.offsetLocation(mScrollOffset[0], mScrollOffset[1]);
 
                                     mNestedXOffset += mScrollOffset[0];
                                     mNestedYOffset += mScrollOffset[1];
@@ -490,7 +518,7 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
                     break;
             }
 
-            if(mVelocityTracker != null){
+            if (mVelocityTracker != null) {
                 mVelocityTracker.addMovement(copyEvent);
             }
 
@@ -634,8 +662,8 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
                 final float futureScale = currentScale * scaleFactor;
 
                 if (futureScale > mMinZoom - mMinOverZoom && futureScale < mMaxZoom + mMaxOverZoom) {
-                    if(mEventListener != null){
-                        mEventListener.onPinchZoom(currentScale,scaleFactor);
+                    if (mEventListener != null) {
+                        mEventListener.onPinchZoom(currentScale, scaleFactor);
                     }
                     if (scaleFactor > 1F) {
                         if (futureScale <= 1.0f) {
@@ -702,8 +730,8 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
                 mCurrentZoom.mPivotX = detector.getFocusX();
                 mCurrentZoom.mPivotY = detector.getFocusY();
 
-                if(mEventListener != null){
-                    mEventListener.onPinchZoomStarted(mCurrentZoom.mScaleFrom,mCurrentZoom.mPivotX, mCurrentZoom.mPivotY);
+                if (mEventListener != null) {
+                    mEventListener.onPinchZoomStarted(mCurrentZoom.mScaleFrom, mCurrentZoom.mPivotX, mCurrentZoom.mPivotY);
                 }
 
                 return true;
@@ -716,12 +744,12 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
         public void onScaleEnd(ScaleGestureDetector detector) {
             final float currentScale = getCurrentZoom();
 
-            if(mEventListener != null){
+            if (mEventListener != null) {
                 mEventListener.onPinchZoomEnded(currentScale);
             }
 
             if (currentScale < mMinZoom) {
-                mSmoothScaleTask.start(mMinZoom, mCenterPoint.x, mCenterPoint.y, mOverZoomAnimationDuration,0,0,false);
+                mSmoothScaleTask.start(mMinZoom, mCenterPoint.x, mCenterPoint.y, mOverZoomAnimationDuration, 0, 0, false);
             } else if (currentScale > mMaxZoom) {
 
                 if (mMaxZoom > mCurrentZoom.mScaleFrom) {
@@ -729,7 +757,7 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
                     mLastZooms.add(mCurrentZoom);
                 }
 
-                mSmoothScaleTask.start(mMaxZoom, mCurrentZoom.mPivotX, mCurrentZoom.mPivotY, mOverZoomAnimationDuration,0,0,false);
+                mSmoothScaleTask.start(mMaxZoom, mCurrentZoom.mPivotX, mCurrentZoom.mPivotY, mOverZoomAnimationDuration, 0, 0, false);
             } else {
                 if (currentScale > mCurrentZoom.mScaleFrom) {
                     mCurrentZoom.mScaleTo = currentScale;
@@ -751,9 +779,9 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
         }
     };
 
-    private boolean isDoubleTap(long currTime,float currX,float currY){
+    private boolean isDoubleTap(long currTime, float currX, float currY) {
         return (currTime - mLastDownTime) <= mDoubleTapTimeout &&
-                Math.sqrt(Math.pow(Math.abs(currX-mLastX),2) + Math.pow(Math.abs(currY-mLastY),2)) <= mDoubleTapDistance;
+                Math.sqrt(Math.pow(Math.abs(currX - mLastX), 2) + Math.pow(Math.abs(currY - mLastY), 2)) <= mDoubleTapDistance;
     }
 
     private int getCurrentPossibleScroll(int deltaValue, int scrollOffset, int scrollRange, int scrollExtent) {
@@ -844,15 +872,13 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
     /**
      * Sets over scroll distance.
      *
-     * @param overScrollDistance Over scroll distance(dp).
+     * @param overScrollDistance Over scroll distance(px).
      */
     public void setOverScrollDistance(int overScrollDistance) {
         if (overScrollDistance < 0) {
             throw new IllegalArgumentException(sErrorInvalidArgumentOverScrollDistance);
         }
-        DisplayMetrics dm = getContext().getResources().getDisplayMetrics();
-
-        mOverScrollDistance = Math.round(overScrollDistance * dm.density);
+        mOverScrollDistance = overScrollDistance;
     }
 
     /**
@@ -953,34 +979,34 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
      *
      * @param zoomValue New zoom value.
      */
-    public void setZoom(float zoomValue){
-       setZoom(zoomValue,mCenterPoint.x,mCenterPoint.y,false);
+    public void setZoom(float zoomValue) {
+        setZoom(zoomValue, mCenterPoint.x, mCenterPoint.y, false);
     }
 
     /**
      * Zooming image with a pivot point at center to the zoomValue.
      *
      * @param zoomValue New zoom value.
-     * @param animate If true animate zooming.
+     * @param animate   If true animate zooming.
      */
-    public void setZoom(float zoomValue,boolean animate){
-       setZoom(zoomValue,mCenterPoint.x,mCenterPoint.y,animate);
+    public void setZoom(float zoomValue, boolean animate) {
+        setZoom(zoomValue, mCenterPoint.x, mCenterPoint.y, animate);
     }
 
     /**
      * Zooming image with a pivot point at (sx,sy) to the zoomValue.
      *
      * @param zoomValue New zoom value.
-     * @param px Pivot point x.
-     * @param py Pivot point y.
-     * @param animate If true animate zooming.
+     * @param px        Pivot point x.
+     * @param py        Pivot point y.
+     * @param animate   If true animate zooming.
      */
-    public void setZoom(float zoomValue,float px,float py,boolean animate){
-        if(mCurrentState == State.NORMAL && (zoomValue >= mMinZoom && zoomValue <= mMaxZoom)) {
-            if(animate){
-                mSmoothScaleTask.start(zoomValue,px,py,mDoubleTapAnimationDuration,0,0,false);
-            }else{
-                scale(zoomValue/getCurrentZoom(),px,py);
+    public void setZoom(float zoomValue, float px, float py, boolean animate) {
+        if (mCurrentState == State.NORMAL && (zoomValue >= mMinZoom && zoomValue <= mMaxZoom)) {
+            if (animate) {
+                mSmoothScaleTask.start(zoomValue, px, py, mDoubleTapAnimationDuration, 0, 0, false);
+            } else {
+                scale(zoomValue / getCurrentZoom(), px, py);
             }
         }
     }
@@ -997,7 +1023,7 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
             removeCallbacks(mFlingTask);
 
             if (animate) {
-                mSmoothScaleTask.start(1F, mCenterPoint.x, mCenterPoint.y, mDoubleTapAnimationDuration, 0, 0,true);
+                mSmoothScaleTask.start(1F, mCenterPoint.x, mCenterPoint.y, mDoubleTapAnimationDuration, 0, 0, true);
             } else {
                 mCurrentState = State.NORMAL;
 
@@ -1314,8 +1340,8 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
 
             mCurrentState = State.SMOOTH_SCALE;
 
-            if(mEventListener != null){
-                mEventListener.onSmoothZoomStarted(getCurrentZoom(),targetScale,pivotX,pivotY);
+            if (mEventListener != null) {
+                mEventListener.onSmoothZoomStarted(getCurrentZoom(), targetScale, pivotX, pivotY);
             }
 
             ViewCompat.postOnAnimationDelayed(ZIVImageView.this, this, 15L);
@@ -1353,7 +1379,7 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
             } else {
                 mCurrentState = State.NORMAL;
 
-                if(mEventListener != null){
+                if (mEventListener != null) {
                     mEventListener.onSmoothZoomEnded(getCurrentZoom());
                 }
 
@@ -1396,7 +1422,8 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
                 // OverScroller bug : https://issuetracker.google.com/36959308
                 mScroller.startScroll(startX, startY, 0, 0, 0);
                 mScroller.computeScrollOffset();
-                //
+                //------------
+
                 if (axis == ONLY_X) {
                     ret = mScroller.springBack(startX, startY, minX, maxX, startY, startY);
                 } else if (axis == ONLY_Y) {
@@ -1432,8 +1459,8 @@ public class ZIVImageView extends AppCompatImageView implements ScrollingView, N
 
                 scrollTo(mScroller.getCurrX(), mScroller.getCurrY());
 
-                if(mEventListener != null){
-                    mEventListener.onFling(oldX,oldY,getScrollX(),getScrollY());
+                if (mEventListener != null) {
+                    mEventListener.onFling(oldX, oldY, getScrollX(), getScrollY());
                 }
 
                 ViewCompat.postOnAnimationDelayed(ZIVImageView.this, this, 15L);
